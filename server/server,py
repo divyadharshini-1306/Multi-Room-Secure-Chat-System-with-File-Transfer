@@ -1,0 +1,93 @@
+import socket
+import ssl
+import threading
+from datetime import datetime
+
+HOST = "0.0.0.0"
+PORT = 6000
+
+rooms = {}
+
+def broadcast(room, message, sender):
+    if room in rooms:
+        for client in rooms[room]:
+            if client != sender:
+                client.send(message.encode())
+
+def handle_client(conn, addr):
+
+    print("Client connected:", addr)
+
+    try:
+        data = conn.recv(1024).decode()
+        parts = data.split()
+
+        if parts[0] == "JOIN":
+            username = parts[1]
+            room = parts[2]
+
+        print(username + " joined room " + room)
+
+        if room not in rooms:
+            rooms[room] = []
+
+        rooms[room].append(conn)
+
+        while True:
+
+            message = conn.recv(1024).decode()
+
+            if not message:
+                break
+
+            if message == "ROOMS":
+                room_list = ", ".join(rooms.keys())
+                conn.send(f"Available rooms: {room_list}".encode())
+                continue
+
+            time = datetime.now().strftime("%H:%M:%S")
+            full_message = f"[{time}] {username}: {message}"
+
+            print(full_message)
+
+            broadcast(room, full_message, conn)
+
+    except:
+        pass
+
+    conn.close()
+
+def start_server():
+
+    context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    context.load_cert_chain(
+        certfile="server.crt",
+        keyfile="server.key"
+    )
+
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+    server.bind((HOST, PORT))
+    server.listen(5)
+
+    print("Secure Chat Server Running on port", PORT)
+
+    while True:
+
+        client_socket, addr = server.accept()
+
+        secure_socket = context.wrap_socket(
+            client_socket,
+            server_side=True
+        )
+
+        thread = threading.Thread(
+            target=handle_client,
+            args=(secure_socket, addr)
+        )
+
+        thread.start()
+
+if __name__ == "__main__":
+    start_server()
