@@ -2,125 +2,157 @@
 
 ## Overview
 
-This project implements a secure multi-client chat system using low-level TCP socket programming with SSL/TLS encryption. The system supports multiple concurrent clients, room-based communication, message timestamps, and secure file transfer between clients.
+This project implements a **secure multi-client chat system** using low-level **TCP socket programming with SSL/TLS encryption**. The system supports **multiple concurrent clients, room-based communication, message timestamps, and secure file transfer between clients**.
 
-The application demonstrates important Computer Networks concepts such as:
+Clients can connect **from different devices on the same network (LAN/WiFi)** by using the server's IP address.
 
-- TCP socket communication
-- Secure communication using SSL/TLS
-- Client–server architecture
-- Concurrency using threads
-- Application-layer protocol design
+The project demonstrates important **Computer Networks concepts**, including:
+
+* TCP socket communication
+* Secure communication using SSL/TLS
+* Client–server architecture
+* Concurrency using threads
+* Application-layer protocol design
+* Multi-device communication over LAN
 
 ---
 
 ## Features
 
 ### Secure Communication
-All communication between clients and server is encrypted using SSL/TLS sockets.
+
+All communication between clients and server is **encrypted using SSL/TLS sockets**, ensuring privacy and preventing eavesdropping.
 
 ### Multi-Client Support
-The server supports multiple clients simultaneously using threading.
+
+The server supports **multiple clients simultaneously** using **threading**, allowing many users to connect at the same time.
+
+### Multi-Device Communication
+
+Clients can connect from **different devices on the same WiFi/LAN network** by entering the **server's local IP address**.
 
 ### Room-Based Chat
-Users can join predefined rooms:
 
-- AI
-- CN
-- ML
+Users can join predefined chat rooms:
 
-Messages are broadcast only to users within the same room.
+* AI
+* CN
+* ML
+
+Messages are **broadcast only to users in the same room**.
 
 ### Username Validation
+
 Usernames must follow these rules:
 
-- Only letters, numbers, and underscores allowed
-- No special characters
+* Only **letters**
+* **Numbers**
+* **Underscores**
 
-Example valid usernames:
+Valid examples:
 
-Alice_1  
-Bob2  
-user_name  
+```
+Alice_1
+Bob2
+user_name
+```
 
-Example invalid usernames:
+Invalid examples:
 
-Alice!  
-Bob@  
-user#1  
-
----
+```
+Alice!
+Bob@
+user#1
+```
 
 ### Message Timestamps
-All chat messages include timestamps.
+
+All messages include timestamps.
 
 Example:
 
+```
 [14:32:10] Alice_1: Hello everyone
-
----
+```
 
 ### Secure File Transfer
-Clients can send files using the command:
 
+Clients can send files using:
+
+```
 /sendfile filename
-
-Files are transmitted through the TLS encrypted socket connection and broadcast to users in the same room.
+```
 
 Example:
 
+```
 /sendfile test.txt
+```
+
+Files are transmitted through the **TLS encrypted socket connection**.
 
 ---
 
 ## Project Architecture
 
-The system follows a Client–Server Architecture.
-         +--------------------+
-         |      SERVER        |
-         |--------------------|
-         | SSL/TLS Encryption |
-         | Room Management    |
-         | Thread Handling    |
-         +---------+----------+
-                   |
-   -------------------------------------
-   |                 |                 |
-Client 1 Client 2 Client 3 (AI) (AI) (CN)
+The system follows a **Client–Server Architecture**.
+
+```
+          +--------------------+
+          |       SERVER       |
+          |--------------------|
+          | SSL/TLS Encryption |
+          | Room Management    |
+          | Thread Handling    |
+          +---------+----------+
+                    |
+     -----------------------------------
+     |                |                |
+   Client 1         Client 2         Client 3
+     (AI)             (AI)             (CN)
+```
 
 Communication flow:
 
+```
 Client → TLS → Server → Broadcast to Room Members
+```
 
 ---
 
 ## Technologies Used
 
-- Python
-- TCP Sockets
-- SSL/TLS
-- Threading
-- Git & GitHub
+| Component            | Technology  |
+| -------------------- | ----------- |
+| Programming Language | Python      |
+| Networking           | TCP Sockets |
+| Security             | SSL/TLS     |
+| Concurrency          | Threading   |
+| Version Control      | Git         |
+| Repository Hosting   | GitHub      |
 
 ---
 
 ## Folder Structure
+
+```
 cn_secure_chat
 │
 ├── client
-│ └── client.py
+│   └── client.py
 │
 ├── server
-│ ├── server.py
-│ ├── server.crt
-│ └── server.key
+│   ├── server.py
+│   ├── server.crt
+│   └── server.key
 │
 ├── security
-│ ├── server.crt
-│ └── server.key
+│   ├── server.crt
+│   └── server.key
 │
 ├── README.md
 └── .gitignore
+```
 
 ---
 
@@ -128,38 +160,130 @@ cn_secure_chat
 
 ### 1. Start the Server
 
-Open a terminal and run:
+Open a terminal on the **server machine**.
 
-cd server  
+Navigate to the server directory:
+
+```
+cd server
+```
+
+Run the server:
+
+```
 python server.py
+```
 
 Expected output:
 
+```
 Secure Chat Server Running on port 6000
+```
+
+The server listens for incoming client connections.
 
 ---
 
-### 2. Start Client
+### 2. Find the Server IP Address
 
-Open another terminal and run:
+To allow clients from other devices to connect, find the **server's local IP address**.
 
-cd client  
-python client.py
+#### Windows
+
+```
+ipconfig
+```
+
+Look for:
+
+```
+IPv4 Address : 10.1.21.132
+```
+
+#### Linux / Mac
+
+```
+ifconfig
+```
+
+or
+
+```
+ip addr
+```
 
 Example:
 
-Enter username: Alice_1  
-Choose room: AI  
+```
+192.168.1.15
+```
+
+This IP address will be used by clients to connect to the server.
 
 ---
 
-### 3. Start Multiple Clients
+### 3. Start a Client
 
-Run the client in multiple terminals:
+Open a new terminal.
 
+Navigate to the client folder:
+
+```
+cd client
+```
+
+Run the client:
+
+```
 python client.py
+```
 
-Users can then chat in the same room.
+The program will ask for the server IP:
+
+```
+Enter server IP address:
+```
+
+Example:
+
+```
+10.1.21.132
+```
+
+---
+
+### 4. Enter Username
+
+Example:
+
+```
+Enter username: Alice
+```
+
+---
+
+### 5. Choose a Room
+
+```
+Available rooms: ['AI', 'CN', 'ML']
+Choose a room: AI
+```
+
+---
+
+### 6. Start Multiple Clients
+
+Run the client on **multiple terminals or different devices**.
+
+Example users:
+
+```
+Alice (AI room)
+Bob (AI room)
+Charlie (CN room)
+```
+
+Users in the **same room** can communicate.
 
 ---
 
@@ -167,71 +291,89 @@ Users can then chat in the same room.
 
 Client 1 sends:
 
+```
 Hello everyone
+```
 
 Client 2 receives:
 
-[14:32:10] Alice_1: Hello everyone
+```
 
 ---
+## File Transfer Example
 
-## File Transfer
-
-Create a test file in the client directory:
+Create a test file:
 
 echo Hello CN Project > test.txt
+```
+Send the file:
 
-Send file:
-
+```
 /sendfile test.txt
 
-Receiving clients will see:
+Server response:
+```
+File test.txt received
 
-Receiving file test.txt  
-File received successfully
+The received file will be saved as:
+```
+received_test.txt
+```
 
 ---
 
 ## Security Implementation
+The system uses **SSL/TLS encryption** to secure communication.
 
-The project uses SSL/TLS encryption to secure communication.
+The server loads a certificate and private key:
 
-Server loads certificate and key:
+```
+server.key
+```
 
-server.crt  
-server.key  
 
-All socket communication is wrapped using TLS:
+```
+SSL/TLS → TCP Socket → Application Protocol
+```
 
-SSL → TCP Socket → Application Protocol
+This ensures:
+
+* Protection from packet sniffing
+* Secure data transmission
 
 ---
 
 ## Application Protocol Design
 
-Custom protocol messages:
+Custom protocol messages used by the system:
 
-JOIN username room  
-MESSAGE text  
-FILE filename filesize  
+```
+JOIN username room
+MESSAGE text
+FILE filename filesize
+```
 
 Example:
 
-JOIN Alice_1 AI  
-FILE test.txt 1024  
+```
+JOIN Alice AI
+FILE test.txt 1024
+```
+
+This protocol allows the server to identify **user actions and message types**.
 
 ---
 
 ## Future Improvements
 
-Potential extensions include:
+Possible extensions include:
 
-- Private messaging (/msg username)
-- User list command (/users)
-- Message history
-- GUI interface (Tkinter or Web UI)
-- File transfer progress indicator
-- Authentication system
+* Private messaging (`/msg username`)
+* User list command (`/users`)
+* Message history storage
+* GUI interface (Tkinter or Web UI)
+* File transfer progress indicator
+* User authentication system
 
 ---
 
@@ -239,15 +381,28 @@ Potential extensions include:
 
 This project demonstrates understanding of:
 
-- Socket programming
-- Secure network communication
-- Concurrency in network servers
-- Protocol design
-- Client-server architectures
+* Socket programming
+* Secure network communication
+* Multi-client concurrency
+* Client–server architectures
+* Protocol design
+* LAN-based multi-device communication
 
 ---
 
 ## Author
 
-Computer Networks Project  
-Secure Chat System with SSL/TLS
+Computer Networks Project
+Secure Multi-Room Chat System with SSL/TLS
+* Encrypted communication
+All socket communication is wrapped using TLS:
+server.crt
+
+
+```
+
+```
+
+```
+
+
