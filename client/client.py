@@ -4,7 +4,6 @@ import threading
 import os
 import re
 
-HOST = "127.0.0.1"
 PORT = 6000
 
 rooms = ["AI", "CN", "ML"]
@@ -19,10 +18,12 @@ def receive_messages(sock):
         except:
             break
 
+
 def valid_username(name):
 
     pattern = r'^[A-Za-z0-9_]+$'
     return re.match(pattern, name)
+
 
 def send_file(sock, filename):
 
@@ -43,14 +44,17 @@ def send_file(sock, filename):
 
     print("File sent")
 
+
 def start_client():
+
+    server_ip = input("Enter server IP address: ")
 
     context = ssl._create_unverified_context()
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    secure_socket = context.wrap_socket(sock, server_hostname=HOST)
+    secure_socket = context.wrap_socket(sock, server_hostname=server_ip)
 
-    secure_socket.connect((HOST, PORT))
+    secure_socket.connect((server_ip, PORT))
 
     # Username validation
     while True:
@@ -99,6 +103,7 @@ def start_client():
 
         else:
             secure_socket.send(message.encode())
+
 
 if __name__ == "__main__":
     start_client()

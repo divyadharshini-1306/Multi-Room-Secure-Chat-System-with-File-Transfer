@@ -13,13 +13,16 @@ rooms = {
     "ML": []
 }
 
+
 def broadcast(room, message, sender):
+
     for client in rooms[room]:
         if client != sender:
             try:
                 client.send(message.encode())
             except:
-                pass
+                rooms[room].remove(client)
+
 
 def handle_client(conn, addr):
 
@@ -47,12 +50,15 @@ def handle_client(conn, addr):
             message = message.decode()
 
             if message.startswith("FILE"):
+
                 parts = message.split()
                 filename = parts[1]
                 filesize = int(parts[2])
 
                 with open("received_" + filename, "wb") as f:
+
                     remaining = filesize
+
                     while remaining > 0:
                         data = conn.recv(1024)
                         f.write(data)
@@ -72,6 +78,7 @@ def handle_client(conn, addr):
         pass
 
     conn.close()
+
 
 def start_server():
 
@@ -98,6 +105,7 @@ def start_server():
         )
 
         thread.start()
+
 
 if __name__ == "__main__":
     start_server()
