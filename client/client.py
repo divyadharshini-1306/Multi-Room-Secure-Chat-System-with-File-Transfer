@@ -6,10 +6,8 @@ import re
 
 PORT = 6000
 
-rooms = ["AI", "CN", "ML"]
 
 def receive_messages(sock):
-
     while True:
         try:
             message = sock.recv(1024).decode()
@@ -20,13 +18,11 @@ def receive_messages(sock):
 
 
 def valid_username(name):
-
     pattern = r'^[A-Za-z0-9_]+$'
     return re.match(pattern, name)
 
 
 def send_file(sock, filename):
-
     if not os.path.exists(filename):
         print("File not found")
         return
@@ -56,53 +52,49 @@ def start_client():
 
     secure_socket.connect((server_ip, PORT))
 
-    # Username validation
+    # 🔥 Receive room list from server
+    print(secure_socket.recv(1024).decode())
+
+    # Username
     while True:
-
-        username = input("Enter username (letters, numbers, _ only): ")
-
+        username = input("Enter username: ")
         if valid_username(username):
             break
         else:
-            print("Invalid username. No special characters allowed.")
+            print("Invalid username")
 
-    # Room selection
-    print("Available rooms:", rooms)
+    # Choose room
+    room = input("Choose room: ")
 
-    while True:
-
-        room = input("Choose a room: ")
-
-        if room in rooms:
-            break
-        else:
-            print("Invalid room. Choose from:", rooms)
-
-    join_message = f"JOIN {username} {room}"
-    secure_socket.send(join_message.encode())
+    secure_socket.send(f"JOIN {username} {room}".encode())
 
     thread = threading.Thread(
         target=receive_messages,
         args=(secure_socket,)
     )
-
     thread.start()
 
-    while True:
+    print("\nCommands:")
+    print("/msg username → start private chat")
+    print("/leave_private → exit private chat\n")
 
-        message = input()
+    try:
+        while True:
 
-        if message.startswith("/sendfile"):
+            message = input()
 
-            parts = message.split()
-
-            if len(parts) == 2:
-                send_file(secure_socket, parts[1])
+            if message.startswith("/sendfile"):
+                parts = message.split()
+                if len(parts) == 2:
+                    send_file(secure_socket, parts[1])
+                else:
+                    print("Usage: /sendfile filename")
             else:
-                print("Usage: /sendfile filename")
+                secure_socket.send(message.encode())
 
-        else:
-            secure_socket.send(message.encode())
+    except KeyboardInterrupt:
+        print("\nExiting...")
+        secure_socket.close()
 
 
 if __name__ == "__main__":
