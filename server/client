@@ -5,31 +5,34 @@ from datetime import datetime
 
 HOST = "0.0.0.0"
 PORT = 6000
+ROOM_LIMIT = 10
 
-rooms = {"AI": [], "CN": [], "ML": []}
-users = {}
+rooms = {
+    "AI": [],
+    "CN": [],
+    "ML": []
+}
+
+users = {}  # username → {conn, room}
 lock = threading.Lock()
 
 
 def get_room_info():
     info = "Rooms:\n"
     for room in rooms:
-        info += f"{room}: {len(rooms[room])} users\n"
+        info += f"{room}: {len(rooms[room])}/{ROOM_LIMIT}\n"
     return info
 
 
-def get_users():
+def get_all_users():
     info = "\nActive Users:\n"
-    for r in rooms:
-        names = [u for _, u in rooms[r]]
-        info += f"{r}: {', '.join(names) if names else 'None'}\n"
+    for room in rooms:
+        names = [u for _, u in rooms[room]]
+        info += f"{room}: {', '.join(names) if names else 'None'}\n"
     return info
 
 
 def broadcast(room, message):
-    if room not in rooms:
-        return
-
     for client, user in rooms[room][:]:
         try:
             client.send((message + "\n").encode())
@@ -38,7 +41,7 @@ def broadcast(room, message):
 
 
 def handle_client(conn, addr):
-    print(f"[NEW CONNECTION] {addr}")
+    print("Client connected:", addr)
 
     username = None
     room = None
@@ -50,42 +53,43 @@ def handle_client(conn, addr):
         parts = data.split()
 
         if len(parts) < 3 or parts[0] != "JOIN":
-            conn.send("Invalid JOIN\n".encode())
+            conn.send("Invalid JOIN format\n".encode())
             return
 
-        username = parts[1]
-        room = parts[2]
+        username, room = parts[1], parts[2]
 
         with lock:
             if room not in rooms:
                 conn.send("Invalid room\n".encode())
                 return
 
+            if len(rooms[room]) >= ROOM_LIMIT:
+                conn.send("Room full\n".encode())
+                return
+
             rooms[room].append((conn, username))
             users[username] = {"conn": conn, "room": room}
 
-        print(f"[JOIN] {username} joined {room}")
-
-        conn.send((get_users() + "\n").encode())
+        print(f"{username} joined {room}")
+        conn.send((get_all_users() + "\n").encode())
 
         while True:
-            data = conn.recv(1024)
-            if not data:
+            message = conn.recv(1024).decode().strip()
+
+            if not message:
                 break
 
-            message = data.decode().strip()
-
-            # 🔹 PING
+            # LATENCY
             if message == "PING":
                 conn.send("PONG\n".encode())
                 continue
 
-            # 🔹 USERS
+            # USER LIST
             if message == "/users":
-                conn.send((get_users() + "\n").encode())
+                conn.send((get_all_users() + "\n").encode())
                 continue
 
-            # 🔹 PRIVATE MESSAGE
+            # PRIVATE MESSAGE
             if message.startswith("/msg"):
                 parts = message.split(" ", 2)
 
@@ -93,78 +97,76 @@ def handle_client(conn, addr):
                     conn.send("Usage: /msg username message\n".encode())
                     continue
 
-                target = parts[1]
-                msg = parts[2]
-
+                target, msg = parts[1], parts[2]
                 timestamp = datetime.now().strftime("%H:%M:%S")
 
+                full_msg = f"[{timestamp}] {username} (private): {msg}"
+
                 if target in users:
-                    users[target]["conn"].send(
-                        f"[{timestamp}] {username} (private): {msg}\n".encode()
-                    )
+                    users[target]["conn"].send((full_msg + "\n").encode())
                     conn.send(f"[SENT to {target}]\n".encode())
                 else:
                     conn.send("User not found\n".encode())
 
                 continue
 
-            # 🔹 FILE TRANSFER
-            if message.startswith("FILE"):
+            # FILE TRANSFER
+            if message.startswith("/sendfile"):
                 parts = message.split()
 
-                if len(parts) < 4:
+                if len(parts) < 3:
+                    conn.send("Usage: /sendfile username filename\n".encode())
                     continue
 
-                target = parts[1]
-                filename = parts[2]
-                filesize = int(parts[3])
+                target, filename = parts[1], parts[2]
 
-                file_data = b""
-                while len(file_data) < filesize:
-                    chunk = conn.recv(4096)
-                    file_data += chunk
+                if target not in users:
+                    conn.send("User not found\n".encode())
+                    continue
 
-                if target in users:
-                    target_conn = users[target]["conn"]
-                    target_conn.send(
-                        f"FILE {username} {filename} {filesize}\n".encode()
-                    )
-                    target_conn.send(file_data)
+                try:
+                    with open(filename, "rb") as f:
+                        data = f.read()
+
+                    header = f"FILE {username} {filename} {len(data)}\n"
+                    users[target]["conn"].send(header.encode())
+                    users[target]["conn"].send(data)
+
+                    conn.send(f"[FILE SENT to {target}]\n".encode())
+
+                except:
+                    conn.send("File error\n".encode())
 
                 continue
 
-            # 🔹 EXIT
+            # EXIT
             if message == "/exit":
                 break
 
-            # 🔹 NORMAL MESSAGE (TIMESTAMP RESTORED)
+            # NORMAL CHAT
             timestamp = datetime.now().strftime("%H:%M:%S")
-            full_msg = f"[{timestamp}] {username}: {message}"
+            full_message = f"[{timestamp}] {username}: {message}"
 
-            print(full_msg)
-            broadcast(room, full_msg)
+            print(full_message)
+            broadcast(room, full_message)
 
     except Exception as e:
-        print("[ERROR]", e)
+        print("Error:", e)
 
     finally:
         with lock:
             if username in users:
                 del users[username]
 
-            if room in rooms:
+            if room:
                 rooms[room] = [(c, u) for c, u in rooms[room] if c != conn]
 
-        if username:
-            broadcast(room, f"{username} left the chat")
-            print(f"[DISCONNECT] {username}")
-
+        broadcast(room, f"{username} left the chat")
+        print(f"{username} disconnected")
         conn.close()
 
 
 def start_server():
-    print("Starting Secure Chat Server...")
-
     context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
     context.load_cert_chain("server.crt", "server.key")
 
@@ -172,8 +174,7 @@ def start_server():
     server.bind((HOST, PORT))
     server.listen(5)
 
-    print(f"[SUCCESS] Server running on {HOST}:{PORT}")
-    print("Waiting for clients...\n")
+    print("Secure Chat Server Running on port 6000")
 
     while True:
         client_socket, addr = server.accept()

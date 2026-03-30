@@ -1,101 +1,146 @@
 import socket
 import ssl
 import threading
+import time
 import os
 import re
 
 PORT = 6000
+latency_flag = False
 
 
-def receive_messages(sock):
+# 🔹 USERNAME VALIDATION
+def valid_username(name):
+    return re.match(r'^[A-Za-z0-9_]+$', name)
+
+
+def receive(sock):
+    global latency_flag
+    buffer = b""
+
     while True:
         try:
-            message = sock.recv(1024).decode()
-            if message:
-                print(message)
+            data = sock.recv(4096)
+            if not data:
+                break
+
+            buffer += data
+
+            while b"\n" in buffer:
+                line, buffer = buffer.split(b"\n", 1)
+                msg = line.decode()
+
+                if msg == "PONG":
+                    latency_flag = True
+                    continue
+
+                if msg.startswith("FILE"):
+                    parts = msg.split()
+                    sender = parts[1]
+                    filename = parts[2]
+                    size = int(parts[3])
+
+                    file_data = b""
+                    while len(file_data) < size:
+                        chunk = sock.recv(4096)
+                        file_data += chunk
+
+                    with open("received_" + filename, "wb") as f:
+                        f.write(file_data)
+
+                    print(f"\nFile received from {sender}")
+                    continue
+
+                print(msg)
+
         except:
+            print("Disconnected from server")
             break
 
 
-def valid_username(name):
-    pattern = r'^[A-Za-z0-9_]+$'
-    return re.match(pattern, name)
+def ping(sock):
+    global latency_flag
+
+    latency_flag = False
+    start = time.time()
+
+    sock.send("PING\n".encode())
+    time.sleep(0.5)
+
+    if latency_flag:
+        latency = (time.time() - start) * 1000
+        print(f"Latency: {int(latency)} ms")
+    else:
+        print("Ping failed")
 
 
-def send_file(sock, filename):
+def send_file(sock, target, filename):
     if not os.path.exists(filename):
         print("File not found")
         return
 
-    filesize = os.path.getsize(filename)
+    size = os.path.getsize(filename)
 
-    sock.send(f"FILE {filename} {filesize}".encode())
+    sock.send(f"FILE {target} {filename} {size}\n".encode())
 
     with open(filename, "rb") as f:
-        while True:
-            data = f.read(1024)
-            if not data:
-                break
-            sock.send(data)
+        sock.sendall(f.read())
 
     print("File sent")
 
 
-def start_client():
-
-    server_ip = input("Enter server IP address: ")
+def start():
+    ip = input("Enter server IP: ")
 
     context = ssl._create_unverified_context()
+    sock = socket.socket()
+    sock = context.wrap_socket(sock, server_hostname=ip)
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    secure_socket = context.wrap_socket(sock, server_hostname=server_ip)
+    sock.connect((ip, PORT))
 
-    secure_socket.connect((server_ip, PORT))
+    print(sock.recv(1024).decode())
 
-    # 🔥 Receive room list from server
-    print(secure_socket.recv(1024).decode())
-
-    # Username
+    # 🔹 VALIDATED USERNAME LOOP
     while True:
         username = input("Enter username: ")
         if valid_username(username):
             break
         else:
-            print("Invalid username")
+            print("Invalid username! Use only letters, numbers, underscore.")
 
-    # Choose room
-    room = input("Choose room: ")
+    room = input("Choose room (AI/CN/ML): ")
 
-    secure_socket.send(f"JOIN {username} {room}".encode())
+    sock.send(f"JOIN {username} {room}\n".encode())
 
-    thread = threading.Thread(
-        target=receive_messages,
-        args=(secure_socket,)
-    )
-    thread.start()
+    print(sock.recv(1024).decode())
 
-    print("\nCommands:")
-    print("/msg username → start private chat")
-    print("/leave_private → exit private chat\n")
+    threading.Thread(target=receive, args=(sock,), daemon=True).start()
 
-    try:
-        while True:
+    print("\n===== COMMANDS =====")
+    print("Type message → broadcast")
+    print("/msg <user> <message>")
+    print("/users")
+    print("/sendfile <user> <file>")
+    print("/ping")
+    print("/exit")
+    print("====================\n")
 
-            message = input()
+    while True:
+        msg = input()
 
-            if message.startswith("/sendfile"):
-                parts = message.split()
-                if len(parts) == 2:
-                    send_file(secure_socket, parts[1])
-                else:
-                    print("Usage: /sendfile filename")
-            else:
-                secure_socket.send(message.encode())
+        if msg == "/ping":
+            ping(sock)
 
-    except KeyboardInterrupt:
-        print("\nExiting...")
-        secure_socket.close()
+        elif msg.startswith("/sendfile"):
+            parts = msg.split()
+            if len(parts) < 3:
+                print("Usage: /sendfile user filename")
+                continue
+            send_file(sock, parts[1], parts[2])
+
+        else:
+            sock.send((msg + "\n").encode())
 
 
 if __name__ == "__main__":
-    start_client()
+    start()
