@@ -2,6 +2,7 @@ import socket
 import ssl
 import threading
 import time
+import re
 from datetime import datetime
 
 HOST = "0.0.0.0"
@@ -14,11 +15,17 @@ lock = threading.Lock()
 total_bytes = 0
 start_time = time.time()
 
+MAX_MSG_SIZE = 8192
+
+
+def valid_username(name):
+    return re.match(r'^[A-Za-z0-9_]+$', name)
+
 
 def get_room_info():
-    info = "Rooms:\n"
+    info = "Available Rooms:\n"
     for room in rooms:
-        info += f"{room}: {len(rooms[room])} users\n"
+        info += f"{room}\n"
     return info
 
 
@@ -32,17 +39,22 @@ def get_users():
 
 def broadcast(room, message):
     global total_bytes
+
     if room not in rooms:
         return
 
     data = (message + "\n").encode()
 
-    for client, user in rooms[room][:]:
+    with lock:
+        clients = list(rooms[room])
+
+    for client, user in clients:
         try:
-            client.send(data)
+            client.sendall(data)
             total_bytes += len(data)
         except:
-            rooms[room].remove((client, user))
+            with lock:
+                rooms[room] = [(c, u) for c, u in rooms[room] if c != client]
 
 
 def monitor_performance():
@@ -60,23 +72,66 @@ def monitor_performance():
         start_time = time.time()
 
 
+def recv_exact(conn, size):
+    data = b""
+    while len(data) < size:
+        chunk = conn.recv(min(4096, size - len(data)))
+        if not chunk:
+            raise ConnectionError("Connection lost during file transfer")
+        data += chunk
+    return data
+
+
 def handle_client(conn, addr):
     global total_bytes
 
     print(f"[NEW CONNECTION] {addr}")
     username = None
     room = None
+    buffer = b""
 
     try:
         conn.send((get_room_info() + "\n").encode())
 
-        data = conn.recv(1024).decode().strip()
-        parts = data.split()
+        # ✅ JOIN LOOP (RETRY UNTIL VALID)
+        while True:
+            while b"\n" not in buffer:
+                data = conn.recv(4096)
+                if not data:
+                    conn.close()
+                    return
+                buffer += data
 
-        if len(parts) < 3 or parts[0] != "JOIN":
-            return
+            line, buffer = buffer.split(b"\n", 1)
+            
+            message = line.decode(errors="ignore").strip()
 
-        username, room = parts[1], parts[2]
+            # ✅ Remove timestamp if present
+            if "||" in message:
+                message = message.split("||")[0]
+
+		#print(message)
+            parts = message.split()
+            print(parts)
+
+            if len(parts) < 3 or parts[0] != "JOIN":
+                conn.send("Invalid JOIN format. Use: JOIN <username> <room>\n".encode())
+                continue
+
+            username, room = parts[1], parts[2]
+            print(room)
+
+            if not valid_username(username):
+                conn.send("❌ Invalid username format\n".encode())
+                continue
+
+            if room not in rooms:
+                conn.send(
+                    "❌ No such room.\nChoose from: AI, CN, ML\nEnter again:\n".encode()
+                )
+                continue
+
+            break  # ✅ valid input
 
         with lock:
             rooms[room].append((conn, username))
@@ -85,13 +140,22 @@ def handle_client(conn, addr):
         print(f"[JOIN] {username} joined {room}")
         conn.send((get_users() + "\n").encode())
 
+        # ✅ MAIN LOOP
         while True:
-            data = conn.recv(1024)
-            if not data:
-                break
+            while b"\n" not in buffer:
+                data = conn.recv(4096)
+                if not data:
+                    raise ConnectionError("Client disconnected")
+                buffer += data
 
-            message = data.decode().strip()
-            total_bytes += len(data)
+            line, buffer = buffer.split(b"\n", 1)
+            message = line.decode(errors="ignore").strip()
+
+            if len(message) > MAX_MSG_SIZE:
+                conn.send("Message too large\n".encode())
+                continue
+
+            total_bytes += len(line)
 
             # PING
             if message == "PING":
@@ -103,7 +167,7 @@ def handle_client(conn, addr):
                 conn.send((get_users() + "\n").encode())
                 continue
 
-            # PRIVATE
+            # PRIVATE MESSAGE
             if message.startswith("/msg"):
                 parts = message.split(" ", 2)
                 if len(parts) < 3:
@@ -120,29 +184,48 @@ def handle_client(conn, addr):
 
                 timestamp = datetime.now().strftime("%H:%M:%S")
 
-                if target in users:
-                    users[target]["conn"].send(
+                with lock:
+                    target_user = users.get(target)
+
+                if target_user:
+                    target_user["conn"].send(
                         f"[{timestamp}] {username} (private): {msg} (RTT: {rt} ms)\n".encode()
                     )
                     conn.send(f"[SENT to {target}]\n".encode())
+                else:
+                    conn.send("User not found\n".encode())
 
                 continue
 
             # FILE TRANSFER
             if message.startswith("FILE"):
                 parts = message.split()
+                if len(parts) < 4:
+                    continue
+
                 target, filename, size = parts[1], parts[2], int(parts[3])
 
                 file_data = b""
-                while len(file_data) < size:
-                    chunk = conn.recv(4096)
-                    file_data += chunk
-                    total_bytes += len(chunk)
 
-                if target in users:
-                    target_conn = users[target]["conn"]
+                if buffer:
+                    take = min(len(buffer), size)
+                    file_data += buffer[:take]
+                    buffer = buffer[take:]
+
+                if len(file_data) < size:
+                    file_data += recv_exact(conn, size - len(file_data))
+
+                total_bytes += len(file_data)
+
+                with lock:
+                    target_user = users.get(target)
+
+                if target_user:
+                    target_conn = target_user["conn"]
                     target_conn.send(f"FILE {username} {filename} {size}\n".encode())
                     target_conn.sendall(file_data)
+                else:
+                    conn.send("User not found\n".encode())
 
                 continue
 
@@ -163,8 +246,12 @@ def handle_client(conn, addr):
             print(full_msg)
             broadcast(room, full_msg)
 
+    except ConnectionError:
+        print(f"[DISCONNECT] {addr}")
+    except ssl.SSLError as e:
+        print(f"[SSL ERROR] {e}")
     except Exception as e:
-        print("[ERROR]", e)
+        print(f"[ERROR] {e}")
 
     finally:
         with lock:
@@ -188,6 +275,8 @@ def start_server():
     context.load_cert_chain("server.crt", "server.key")
 
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
     server.bind((HOST, PORT))
     server.listen(5)
 
@@ -198,7 +287,11 @@ def start_server():
         client_socket, addr = server.accept()
         secure_socket = context.wrap_socket(client_socket, server_side=True)
 
-        threading.Thread(target=handle_client, args=(secure_socket, addr), daemon=True).start()
+        threading.Thread(
+            target=handle_client,
+            args=(secure_socket, addr),
+            daemon=True
+        ).start()
 
 
 if __name__ == "__main__":

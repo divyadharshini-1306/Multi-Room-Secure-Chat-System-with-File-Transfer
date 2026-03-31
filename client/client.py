@@ -13,7 +13,7 @@ def valid_username(name):
     return re.match(r'^[A-Za-z0-9_]+$', name)
 
 
-def receive(sock):
+def receive(sock):  
     global latency_flag
     buffer = b""
 
@@ -101,7 +101,7 @@ def start():
     sock = socket.socket()
     sock = context.wrap_socket(sock, server_hostname=ip)
 
-    sock.connect((ip, PORT))
+    sock.connect((ip, PORT))    
     print(sock.recv(1024).decode())
 
     while True:
@@ -147,6 +147,12 @@ def start():
                 continue
             ts = time.time()
             sock.send(f"/msg {parts[1]} {parts[2]}||{ts}\n".encode())
+        
+        elif msg == "/exit":
+            sock.send("/exit\n".encode())
+            print("Disconnecting...")
+            sock.close()
+            break
 
         else:
             ts = time.time()
